@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>AirDrop Web QR Transfer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  /* ───────────────────────────────────────────────
+     DESIGN SYSTEM – variabili globali
+  ─────────────────────────────────────────────── */
+  :root {
+    --bg:           #0a0a0f;
+    --surface:      #111118;
+    --surface2:     #1a1a24;
+    --border:       rgba(255,255,255,.07);
+    --accent:       #3b82f6;
+    --accent2:      #6366f1;
+    --accent-glow:  rgba(59,130,246,.35);
+    --text:         #f0f0f5;
+    --muted:        rgba(240,240,245,.45);
+    --success:      #22c55e;
+    --warning:      #f59e0b;
+    --danger:       #ef4444;
+    --radius:       20px;
+    --radius-sm:    12px;
+    --transition:   .3s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* ───────────────────────────────────────────────
+     RESET / BASE
+  ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { height: 100%; }
+
+  body {
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Sfondo con mesh gradient animato */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% -10%, rgba(59,130,246,.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 110%,  rgba(99,102,241,.10) 0%, transparent 55%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ───────────────────────────────────────────────
+     LAYOUT SHELL
+  ─────────────────────────────────────────────── */
+  #app {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 64px;
+  }
+
+  /* ───────────────────────────────────────────────
+     HEADER
+  ─────────────────────────────────────────────── */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    animation: fadeDown .6s ease both;
+  }
+  .header-logo {
+    width: 56px; height: 56px;
+    margin: 0 auto 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 0 32px var(--accent-glow);
+  }
+  .header h1 {
+    font-size: clamp(22px, 5vw, 30px);
+    font-weight: 700;
+    letter-spacing: -.03em;
+    background: linear-gradient(135deg, #fff 30%, rgba(255,255,255,.55));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header p {
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--muted);
+    letter-spacing: .01em;
+  }
+
+  /* ───────────────────────────────────────────────
+     CARD
+  ─────────────────────────────────────────────── */
+  .card {
+    width: 100%;
+    max-width: 480px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 28px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 24px 80px rgba(0,0,0,.45);
+    animation: fadeUp .55s ease both;
+  }
+  .card + .card { margin-top: 16px; }
+
+  /* ───────────────────────────────────────────────
+     SEZIONI (pagine)
+  ─────────────────────────────────────────────── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ───────────────────────────────────────────────
+     DROP ZONE
+  ─────────────────────────────────────────────── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone:hover,
+  .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(59,130,246,.05);
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .drop-zone .dz-icon {
+    font-size: 44px; margin-bottom: 12px; display: block;
+    filter: drop-shadow(0 0 16px var(--accent-glow));
+  }
+  .drop-zone h3 {
+    font-size: 16px; font-weight: 600; margin-bottom: 6px;
+  }
+  .drop-zone p {
+    font-size: 13px; color: var(--muted);
+  }
+
+  /* ───────────────────────────────────────────────
+     AVVISO FILE GRANDE
+  ─────────────────────────────────────────────── */
+  .alert {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.5;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .alert.show { display: flex; }
+  .alert-warning {
+    background: rgba(245,158,11,.1);
+    border: 1px solid rgba(245,158,11,.25);
+    color: var(--warning);
+  }
+  .alert-danger {
+    background: rgba(239,68,68,.1);
+    border: 1px solid rgba(239,68,68,.25);
+    color: var(--danger);
+  }
+  .alert-success {
+    background: rgba(34,197,94,.1);
+    border: 1px solid rgba(34,197,94,.25);
+    color: var(--success);
+  }
+
+  /* ───────────────────────────────────────────────
+     UPLOAD PROGRESS (mittente)
+  ─────────────────────────────────────────────── */
+  .upload-status {
+    display: none;
+    margin-top: 20px;
+  }
+  .upload-status.show { display: block; }
+  .upload-label {
+    display: flex; justify-content: space-between;
+    font-size: 13px; color: var(--muted); margin-bottom: 8px;
+  }
+  .progress-track {
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    width: 0%;
+    transition: width .25s ease;
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+
+  /* ───────────────────────────────────────────────
+     FILE INFO CHIP
+  ─────────────────────────────────────────────── */
+  .file-chip {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    gap: 12px;
+    align-items: center;
+  }
+  .file-chip.show { display: flex; }
+  .file-chip-icon { font-size: 26px; }
+  .file-chip-info { flex: 1; min-width: 0; }
+  .file-chip-name {
+    font-size: 14px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .file-chip-size { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ───────────────────────────────────────────────
+     BOTTONI
+  ─────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 14px 24px;
+    border: none; border-radius: var(--radius-sm);
+    font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+    cursor: pointer; transition: var(--transition);
+    width: 100%; margin-top: 20px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+    box-shadow: 0 4px 24px var(--accent-glow);
+  }
+  .btn-primary:hover { opacity: .88; transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled {
+    opacity: .35; cursor: not-allowed; transform: none;
+  }
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,.06); }
+  .btn-success {
+    background: linear-gradient(135deg, #16a34a, var(--success));
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(34,197,94,.3);
+  }
+  .btn-success:hover { opacity: .88; transform: translateY(-1px); }
+
+  /* ───────────────────────────────────────────────
+     QR SECTION
+  ─────────────────────────────────────────────── */
+  .qr-wrapper {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 0 8px;
+  }
+  .qr-frame {
+    background: #fff;
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 0 40px var(--accent-glow);
+    margin-bottom: 20px;
+  }
+  #qrcode canvas, #qrcode img { display: block; }
+
+  .qr-hint {
+    font-size: 13px; color: var(--muted);
+    text-align: center; margin-top: 4px;
+  }
+  .link-row {
+    display: flex; gap: 8px; margin-top: 16px; width: 100%;
+  }
+  .link-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 13px;
+    padding: 10px 14px;
+    outline: none;
+  }
+  .btn-copy {
+    padding: 10px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer; transition: var(--transition);
+    white-space: nowrap;
+  }
+  .btn-copy:hover { background: rgba(255,255,255,.08); }
+
+  .expiry-note {
+    font-size: 12px; color: var(--muted); text-align: center; margin-top: 16px;
+  }
+  .expiry-note span { color: var(--warning); }
+
+  /* ───────────────────────────────────────────────
+     PAGINA RICEVENTE
+  ─────────────────────────────────────────────── */
+  .receive-header {
+    text-align: center; margin-bottom: 28px;
+  }
+  .receive-header h2 {
+    font-size: 20px; font-weight: 700; margin-bottom: 6px;
+  }
+  .receive-header p { font-size: 14px; color: var(--muted); }
+
+  /* Spinner */
+  .spinner-ring {
+    width: 64px; height: 64px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 1s linear infinite;
+  }
+
+  /* Preview container */
+  .preview-container { display: none; margin-top: 20px; }
+  .preview-container.show { display: block; }
+  .preview-container img {
+    width: 100%; border-radius: var(--radius-sm);
+    max-height: 320px; object-fit: contain;
+    background: var(--surface2);
+  }
+  .preview-container video {
+    width: 100%; border-radius: var(--radius-sm);
+    max-height: 320px; background: #000;
+  }
+  .preview-label {
+    font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center;
+  }
+
+  /* ───────────────────────────────────────────────
+     TIMER COUNTDOWN
+  ─────────────────────────────────────────────── */
+  .countdown {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 99px;
+    margin-top: 12px;
+  }
+  .countdown .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success); animation: pulse 1.5s ease infinite;
+  }
+
+  /* ───────────────────────────────────────────────
+     DIVIDER
+  ─────────────────────────────────────────────── */
+  .divider {
+    height: 1px; background: var(--border); margin: 24px 0;
+  }
+
+  /* ───────────────────────────────────────────────
+     ANIMAZIONI
+  ─────────────────────────────────────────────── */
+  @keyframes fadeUp   { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:none; } }
+  @keyframes fadeDown { from { opacity:0; transform:translateY(-16px); } to { opacity:1; transform:none; } }
+  @keyframes spin     { to { transform:rotate(360deg); } }
+  @keyframes pulse    { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+  @keyframes shimmer  {
+    0%   { background-position: -400px 0; }
+    100% { background-position:  400px 0; }
+  }
+
+  /* Skeleton loader */
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface2) 25%, var(--surface) 50%, var(--surface2) 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.6s infinite;
+    border-radius: 8px;
+    height: 14px; margin-bottom: 10px;
+  }
+
+  /* ───────────────────────────────────────────────
+     FOOTER NOTE
+  ─────────────────────────────────────────────── */
+  .footer-note {
+    margin-top: 32px; font-size: 12px;
+    color: rgba(255,255,255,.2); text-align: center;
+    animation: fadeUp .7s .3s ease both;
+  }
+
+  /* ───────────────────────────────────────────────
+     RESPONSIVE
+  ─────────────────────────────────────────────── */
+  @media (max-width: 400px) {
+    .card { padding: 24px 18px; }
+    .drop-zone { padding: 36px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── HEADER ── -->
+  <div class="header">
+    <div class="header-logo">📡</div>
+    <h1>AirDrop QR Transfer</h1>
+    <p>Trasferisci file tra dispositivi via QR code</p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       SEZIONE 1 — UPLOAD (mittente)
+  ═══════════════════════════════════════════ -->
+  <div id="sec-upload" class="card section active">
+
+    <!-- Drop Zone -->
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*,video/*,*/*">
+      <span class="dz-icon">☁️</span>
+      <h3>Carica un file</h3>
+      <p>Trascina qui o tocca per scegliere</p>
+    </div>
+
+    <!-- Avviso file grande -->
+    <div class="alert alert-warning" id="alertLarge">
+      ⚠️ <div><strong>File grande</strong> — il caricamento potrebbe richiedere tempo. Mantieni la pagina aperta.</div>
+    </div>
+
+    <!-- Info file selezionato -->
+    <div class="file-chip" id="fileChip">
+      <span class="file-chip-icon" id="fileIcon">📄</span>
+      <div class="file-chip-info">
+        <div class="file-chip-name" id="fileName">—</div>
+        <div class="file-chip-size" id="fileSize">—</div>
+      </div>
+    </div>
+
+    <!-- Avanzamento simulato upload -->
+    <div class="upload-status" id="uploadStatus">
+      <div class="upload-label">
+        <span>Caricamento in corso…</span>
+        <span id="uploadPct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="uploadBar"></div>
+      </div>
+    </div>
+
+    <!-- Errore -->
+    <div class="alert alert-danger" id="alertError">
+      ❌ <div id="errorMsg">Errore durante il caricamento.</div>
+    </div>
+
+    <!-- Bottone invia -->
+    <button class="btn btn-primary" id="btnSend" disabled>
+      📤 Genera QR Code
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       SEZIONE 2 — QR CODE (mittente)
+  ═══════════════════════════════════════════ -->
+  <div id="sec-qr" class="card section">
+
+    <div class="qr-wrapper">
+      <div class="qr-frame" id="qrcode"></div>
+      <p class="qr-hint">📱 Scansiona con l'altro dispositivo</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Link copiabile -->
+    <div class="link-row">
+      <input class="link-input" id="transferLink" readonly>
+      <button class="btn-copy" id="btnCopy">Copia</button>
+    </div>
+
+    <p class="expiry-note">
+      ⏱ Il link scadrà tra <span id="expiryTimer">10:00</span> minuti
+      o dopo il primo download
+    </p>
+
+    <div class="countdown">
+      <span class="dot"></span>
+      In attesa del destinatario…
+    </div>
+
+    <button class="btn btn-secondary" id="btnNewTransfer" style="margin-top:20px">
+      🔄 Nuovo trasferimento
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       SEZIONE 3 — RICEZIONE (destinatario)
+  ═══════════════════════════════════════════ -->
+  <div id="sec-receive" class="card section">
+
+    <div class="receive-header">
+      <div class="spinner-ring" id="spinner"></div>
+      <h2 id="receiveTitle">Trasferimento in corso…</h2>
+      <p id="receiveSubtitle">Recupero del file dal mittente</p>
+    </div>
+
+    <!-- Barra progresso ricezione -->
+    <div id="receiveProgress" style="display:none">
+      <div class="upload-label">
+        <span id="receiveLabel">Download…</span>
+        <span id="receivePct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="receiveBar"></div>
+      </div>
+    </div>
+
+    <!-- Skeleton mentre carica -->
+    <div id="skeleton" style="margin-top:20px">
+      <div class="skeleton" style="width:80%"></div>
+      <div class="skeleton" style="width:60%"></div>
+      <div class="skeleton" style="width:70%"></div>
+    </div>
+
+    <!-- Errore link scaduto / non trovato -->
+    <div class="alert alert-danger" id="alertReceiveError" style="margin-top:16px"></div>
+
+    <!-- Anteprima -->
+    <div class="preview-container" id="previewContainer">
+      <img id="previewImg" src="" alt="Anteprima" style="display:none">
+      <video id="previewVid" controls style="display:none"></video>
+      <p class="preview-label" id="previewLabel"></p>
+    </div>
+
+    <!-- File info -->
+    <div class="file-chip" id="receiveFileChip" style="margin-top:16px">
+      <span class="file-chip-icon" id="receiveFileIcon">📄</span>
+      <div class="file-chip-info">
+        <div class="file-chip-name" id="receiveFileName">—</div>
+        <div class="file-chip-size" id="receiveFileSize">—</div>
+      </div>
+    </div>
+
+    <!-- Bottone download -->
+    <button class="btn btn-success" id="btnDownload" style="display:none">
+      ⬇️ Scarica file
+    </button>
+
+    <div class="alert alert-success" id="alertDownloaded" style="margin-top:16px">
+      ✅ File scaricato con successo! Questo link non è più valido.
+    </div>
+  </div>
+
+  <p class="footer-note">File eliminati dopo 1 download · Scadenza automatica 10 min</p>
+
+</div><!-- /#app -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT — logica completa
+════════════════════════════════════════════════════════════ -->
+<script>
+/* ─────────────────────────────────────────────────────────────
+   STORE IN-MEMORY (simula backend)
+   In un'app reale useresti un server; qui tutto vive nella
+   stessa scheda/tab tramite sessionStorage condiviso.
+   Per demo multi-tab usiamo localStorage con serializzazione.
+───────────────────────────────────────────────────────────── */
+const STORE_KEY = 'aqt_transfers'; // chiave localStorage
+const TTL_MS    = 10 * 60 * 1000; // 10 minuti
+
+/** Legge tutti i trasferimenti dal localStorage */
+function getStore() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+/** Salva nel localStorage */
+function saveStore(store) {
+  localStorage.setItem(STORE_KEY, JSON.stringify(store));
+}
+
+/** Aggiunge un trasferimento */
+function storeFile(id, meta) {
+  const store = getStore();
+  store[id] = meta;
+  saveStore(store);
+}
+
+/** Recupera un trasferimento per ID */
+function retrieveFile(id) {
+  const store = getStore();
+  return store[id] || null;
+}
+
+/** Elimina un trasferimento (dopo download o scadenza) */
+function deleteFile(id) {
+  const store = getStore();
+  delete store[id];
+  saveStore(store);
+  console.log(`[AQT] Trasferimento ${id} eliminato.`);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   UTILITY
+───────────────────────────────────────────────────────────── */
+/** Genera token casuale a 12 char hex */
+function genId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(6)))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+/** Formatta byte in unità leggibili */
+function fmtBytes(b) {
+  if (b < 1024)          return b + ' B';
+  if (b < 1024**2)       return (b/1024).toFixed(1) + ' KB';
+  if (b < 1024**3)       return (b/1024**2).toFixed(1) + ' MB';
+  return (b/1024**3).toFixed(2) + ' GB';
+}
+
+/** Icona in base al MIME */
+function mimeIcon(type) {
+  if (!type) return '📄';
+  if (type.startsWith('image/')) return '🖼️';
+  if (type.startsWith('video/')) return '🎬';
+  if (type.startsWith('audio/')) return '🎵';
+  if (type.includes('pdf'))      return '📕';
+  if (type.includes('zip')||type.includes('archive')) return '🗜️';
+  return '📄';
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SEZIONE UPLOAD
+───────────────────────────────────────────────────────────── */
+const dropZone    = document.getElementById('dropZone');
+const fileInput   = document.getElementById('fileInput');
+const btnSend     = document.getElementById('btnSend');
+const alertLarge  = document.getElementById('alertLarge');
+const alertError  = document.getElementById('alertError');
+const errorMsg    = document.getElementById('errorMsg');
+const fileChip    = document.getElementById('fileChip');
+const fileIcon    = document.getElementById('fileIcon');
+const fileName    = document.getElementById('fileName');
+const fileSize    = document.getElementById('fileSize');
+const uploadStatus = document.getElementById('uploadStatus');
+const uploadBar   = document.getElementById('uploadBar');
+const uploadPct   = document.getElementById('uploadPct');
+
+const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
+
+let selectedFile = null;
+
+/** Gestisce la selezione del file */
+function handleFileSelect(file) {
+  if (!file) return;
+  selectedFile = file;
+
+  // Chip info
+  fileName.textContent = file.name;
+  fileSize.textContent = fmtBytes(file.size);
+  fileIcon.textContent = mimeIcon(file.type);
+  fileChip.classList.add('show');
+
+  // Avviso file grande
+  alertLarge.classList.toggle('show', file.size > LARGE_FILE_THRESHOLD);
+
+  // Reset errori
+  alertError.classList.remove('show');
+
+  // Abilita bottone
+  btnSend.disabled = false;
+}
+
+// Click sul drop-zone → input
+dropZone.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFileSelect(fileInput.files[0]);
+});
+
+// Drag & drop
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer?.files?.[0];
+  if (f) handleFileSelect(f);
+});
+
+/** Legge il file come base64 e simula una barra di progresso */
+function simulateUpload(file) {
+  return new Promise((resolve, reject) => {
+    uploadStatus.classList.add('show');
+    uploadBar.style.width = '0%';
+    uploadPct.textContent = '0%';
+
+    // Simulazione velocità: più il file è grande, più la barra è visibile
+    const isBig = file.size > LARGE_FILE_THRESHOLD;
+    const steps  = isBig ? 40 : 8;
+    const delay  = isBig ? 60 : 20;
+    let current  = 0;
+
+    const tick = setInterval(() => {
+      current += 100 / steps;
+      if (current >= 100) {
+        current = 100;
+        clearInterval(tick);
+        uploadBar.style.width = '100%';
+        uploadPct.textContent = '100%';
+
+        // Legge davvero il file
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('Lettura file fallita'));
+        reader.readAsDataURL(file);
+      } else {
+        uploadBar.style.width = current.toFixed(1) + '%';
+        uploadPct.textContent = Math.round(current) + '%';
+      }
+    }, delay);
+  });
+}
+
+/** Click su "Genera QR Code" */
+btnSend.addEventListener('click', async () => {
+  if (!selectedFile) return;
+
+  btnSend.disabled = true;
+  alertError.classList.remove('show');
+
+  try {
+    // Legge il file con barra di progresso
+    const dataUrl = await simulateUpload(selectedFile);
+
+    // Genera ID univoco
+    const id = genId();
+    const expiry = Date.now() + TTL_MS;
+
+    // Salva in localStorage
+    storeFile(id, {
+      id,
+      name:    selectedFile.name,
+      type:    selectedFile.type,
+      size:    selectedFile.size,
+      dataUrl, // base64 del file
+      expiry,
+      downloaded: false
+    });
+
+    // Programma auto-delete dopo TTL
+    setTimeout(() => deleteFile(id), TTL_MS);
+
+    // Mostra sezione QR
+    showQR(id);
+
+  } catch (err) {
+    console.error(err);
+    errorMsg.textContent = 'Errore: ' + err.message;
+    alertError.classList.add('show');
+    btnSend.disabled = false;
+    uploadStatus.classList.remove('show');
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   SEZIONE QR CODE
+───────────────────────────────────────────────────────────── */
+const secUpload  = document.getElementById('sec-upload');
+const secQR      = document.getElementById('sec-qr');
+const secReceive = document.getElementById('sec-receive');
+const expiryTimer = document.getElementById('expiryTimer');
+const transferLink = document.getElementById('transferLink');
+const btnCopy    = document.getElementById('btnCopy');
+const btnNewTransfer = document.getElementById('btnNewTransfer');
+
+let expiryInterval = null;
+
+function showSection(id) {
+  [secUpload, secQR, secReceive].forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showQR(id) {
+  // Costruisce URL con parametro ?id=
+  const url = new URL(window.location.href.split('?')[0]);
+  url.searchParams.set('id', id);
+  const link = url.toString();
+
+  // Link copiabile
+  transferLink.value = link;
+
+  // Genera QR
+  const qrDiv = document.getElementById('qrcode');
+  qrDiv.innerHTML = '';
+  new QRCode(qrDiv, {
+    text:         link,
+    width:        200,
+    height:       200,
+    colorDark:    '#000000',
+    colorLight:   '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  // Avvia countdown 10 minuti
+  let remaining = TTL_MS / 1000;
+  if (expiryInterval) clearInterval(expiryInterval);
+  expiryInterval = setInterval(() => {
+    remaining--;
+    const m = String(Math.floor(remaining / 60)).padStart(2,'0');
+    const s = String(remaining % 60).padStart(2,'0');
+    expiryTimer.textContent = `${m}:${s}`;
+    if (remaining <= 0) {
+      clearInterval(expiryInterval);
+      expiryTimer.textContent = 'Scaduto';
+    }
+  }, 1000);
+
+  showSection('sec-qr');
+}
+
+// Copia link
+btnCopy.addEventListener('click', () => {
+  navigator.clipboard.writeText(transferLink.value).then(() => {
+    btnCopy.textContent = '✓ Copiato';
+    setTimeout(() => { btnCopy.textContent = 'Copia'; }, 2000);
+  });
+});
+
+// Nuovo trasferimento
+btnNewTransfer.addEventListener('click', () => {
+  clearInterval(expiryInterval);
+  selectedFile = null;
+  fileInput.value = '';
+  fileChip.classList.remove('show');
+  alertLarge.classList.remove('show');
+  alertError.classList.remove('show');
+  uploadStatus.classList.remove('show');
+  uploadBar.style.width = '0%';
+  btnSend.disabled = true;
+  // Pulisce URL
+  history.replaceState({}, '', window.location.pathname);
+  showSection('sec-upload');
+});
+
+/* ─────────────────────────────────────────────────────────────
+   SEZIONE RICEZIONE (si attiva se c'è ?id= nell'URL)
+───────────────────────────────────────────────────────────── */
+const spinner         = document.getElementById('spinner');
+const receiveTitle    = document.getElementById('receiveTitle');
+const receiveSubtitle = document.getElementById('receiveSubtitle');
+const receiveProgress = document.getElementById('receiveProgress');
+const receiveBar      = document.getElementById('receiveBar');
+const receivePct      = document.getElementById('receivePct');
+const receiveLabel    = document.getElementById('receiveLabel');
+const skeleton        = document.getElementById('skeleton');
+const alertReceiveErr = document.getElementById('alertReceiveError');
+const previewContainer = document.getElementById('previewContainer');
+const previewImg      = document.getElementById('previewImg');
+const previewVid      = document.getElementById('previewVid');
+const previewLabel    = document.getElementById('previewLabel');
+const receiveFileChip = document.getElementById('receiveFileChip');
+const receiveFileIcon = document.getElementById('receiveFileIcon');
+const receiveFileName = document.getElementById('receiveFileName');
+const receiveFileSize = document.getElementById('receiveFileSize');
+const btnDownload     = document.getElementById('btnDownload');
+const alertDownloaded = document.getElementById('alertDownloaded');
+
+alertDownloaded.style.display = 'none';
+
+/** Simula barra di progresso per file grandi durante il "recupero" */
+function simulateReceiveProgress(fileSizeBytes) {
+  return new Promise(resolve => {
+    const isBig = fileSizeBytes > LARGE_FILE_THRESHOLD;
+
+    if (!isBig) {
+      // File piccolo → barra invisibile, risolve subito
+      return resolve();
+    }
+
+    receiveProgress.style.display = 'block';
+    receiveBar.style.width = '0%';
+    receivePct.textContent = '0%';
+
+    const steps = 30;
+    const delay = 80;
+    let current = 0;
+
+    const tick = setInterval(() => {
+      current += 100 / steps;
+      if (current >= 100) {
+        current = 100;
+        clearInterval(tick);
+        receiveBar.style.width = '100%';
+        receivePct.textContent = '100%';
+        receiveProgress.style.display = 'none';
+        resolve();
+      } else {
+        receiveBar.style.width = current.toFixed(1) + '%';
+        receivePct.textContent = Math.round(current) + '%';
+      }
+    }, delay);
+  });
+}
+
+async function startReceive(id) {
+  showSection('sec-receive');
+  skeleton.style.display = 'block';
+  receiveTitle.textContent = 'Trasferimento in corso…';
+  receiveSubtitle.textContent = 'Recupero del file dal mittente';
+  alertReceiveErr.style.display = 'none';
+  alertReceiveErr.classList.remove('show');
+  receiveFileChip.classList.remove('show');
+  previewContainer.classList.remove('show');
+  btnDownload.style.display = 'none';
+  alertDownloaded.style.display = 'none';
+
+  // Piccola pausa per effetto visivo
+  await new Promise(r => setTimeout(r, 600));
+
+  const meta = retrieveFile(id);
+
+  // File non trovato o scaduto
+  if (!meta) {
+    spinner.style.display = 'none';
+    skeleton.style.display = 'none';
+    receiveTitle.textContent = 'Link non valido';
+    receiveSubtitle.textContent = 'Il file non è disponibile';
+    alertReceiveErr.innerHTML = '❌ &nbsp;<div><strong>Link scaduto o non trovato</strong> — Il file è stato eliminato o il link non è corretto.</div>';
+    alertReceiveErr.classList.add('show');
+    alertReceiveErr.style.display = 'flex';
+    return;
+  }
+
+  // File già scaricato
+  if (meta.downloaded) {
+    spinner.style.display = 'none';
+    skeleton.style.display = 'none';
+    receiveTitle.textContent = 'File già scaricato';
+    receiveSubtitle.textContent = 'Questo link è a uso singolo';
+    alertReceiveErr.innerHTML = '🔒 &nbsp;<div>Il file è stato già scaricato e il link non è più valido.</div>';
+    alertReceiveErr.classList.add('show');
+    alertReceiveErr.style.display = 'flex';
+    return;
+  }
+
+  // Scaduto per TTL
+  if (Date.now() > meta.expiry) {
+    deleteFile(id);
+    spinner.style.display = 'none';
+    skeleton.style.display = 'none';
+    receiveTitle.textContent = 'Link scaduto';
+    receiveSubtitle.textContent = 'Il file non è più disponibile';
+    alertReceiveErr.innerHTML = '⏱ &nbsp;<div>Il link è scaduto dopo 10 minuti dall\'invio.</div>';
+    alertReceiveErr.classList.add('show');
+    alertReceiveErr.style.display = 'flex';
+    return;
+  }
+
+  // Barra progresso reale
+  await simulateReceiveProgress(meta.size);
+
+  skeleton.style.display = 'none';
+  spinner.style.display = 'none';
+  receiveTitle.textContent = 'Pronto per il download';
+  receiveSubtitle.textContent = meta.name;
+
+  // Chip info file
+  receiveFileIcon.textContent = mimeIcon(meta.type);
+  receiveFileName.textContent = meta.name;
+  receiveFileSize.textContent = fmtBytes(meta.size);
+  receiveFileChip.classList.add('show');
+
+  // Anteprima
+  if (meta.type.startsWith('image/')) {
+    previewImg.src = meta.dataUrl;
+    previewImg.style.display = 'block';
+    previewVid.style.display = 'none';
+    previewLabel.textContent = meta.name;
+    previewContainer.classList.add('show');
+  } else if (meta.type.startsWith('video/')) {
+    previewVid.src = meta.dataUrl;
+    previewVid.style.display = 'block';
+    previewImg.style.display = 'none';
+    previewLabel.textContent = meta.name;
+    previewContainer.classList.add('show');
+  }
+
+  // Bottone download
+  btnDownload.style.display = 'flex';
+
+  // Gestore download
+  btnDownload.onclick = () => {
+    // Crea link temporaneo e clicca
+    const a = document.createElement('a');
+    a.href     = meta.dataUrl;
+    a.download = meta.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // Marca come scaricato e pulisce
+    meta.downloaded = true;
+    storeFile(id, meta);
+    // Elimina immediatamente
+    deleteFile(id);
+
+    btnDownload.style.display = 'none';
+    alertDownloaded.style.display = 'flex';
+    previewContainer.classList.remove('show');
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   INIT — controlla se URL ha ?id=
+───────────────────────────────────────────────────────────── */
+(function init() {
+  const params = new URLSearchParams(window.location.search);
+  const id     = params.get('id');
+  if (id) {
+    startReceive(id);
+  }
+})();
+</script>
+
+</body>
+</html>
